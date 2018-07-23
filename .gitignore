@@ -1,0 +1,10 @@
+# This is needed to avoid Atom language-elm message.
+elm-package.json
+
+# Compiling stuff.
+elm-stuff/
+
+# OS specific files.
+.DS_Store
+Thumbs.db
+*~
