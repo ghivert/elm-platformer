@@ -8,6 +8,7 @@ import Html.Attributes as Attributes
 import Task exposing (Task)
 import Update
 import Time exposing (Posix)
+import Json.Decode as Decode exposing (Decoder)
 
 import Setters exposing (..)
 
@@ -15,7 +16,8 @@ type alias Model =
   { viewport : Viewport
   , position : Int
   , tiles : List Tile
-  , player : { position : Position }
+  , player : Player
+  , keyPressed : List KeyboardKey
   }
 
 type alias Viewport =
@@ -29,6 +31,15 @@ type alias Tile =
   , content : String
   }
 
+type alias Player =
+  { position : Position
+  , walking : Maybe Walking
+  }
+
+type Walking
+  = First
+  | Second
+
 type alias Position =
   { x : Int
   , y : Int
@@ -38,6 +49,17 @@ type Msg
   = ViewportSize Dom.Viewport
   | ResizeWindow Int Int
   | AnimationFrame Posix
+  | KeyHandling KeyAction
+
+type KeyAction
+  = KeyDown KeyboardKey
+  | KeyUp KeyboardKey
+
+type KeyboardKey
+  = KeyboardUp
+  | KeyboardLeft
+  | KeyboardRight
+  | KeyboardSpace
 
 tileSize : Int
 tileSize = 64
@@ -71,7 +93,7 @@ init = always (start, getViewport)
 
 start : Model
 start =
-  Model (Viewport 0 0) 0 ground { position = Position 0 200 }
+  Model (Viewport 0 0) 0 ground { position = Position 0 200, walking = Nothing } []
 
 getViewport : Cmd Msg
 getViewport = Task.perform ViewportSize Dom.getViewport
@@ -92,10 +114,58 @@ update msg model =
   case msg of
     ViewportSize { viewport } -> saveViewportIn model viewport.width viewport.height
     ResizeWindow width height -> saveViewportIn model (toFloat width) (toFloat height)
+    KeyHandling keyAction ->
+      handleKeyAction keyAction model
+      |> Update.identity
     AnimationFrame time ->
       model
+      |> applySpeed
       |> applyGravity
       |> Update.identity
+
+handleKeyAction : KeyAction -> Model -> Model
+handleKeyAction keyAction ({ keyPressed } as model) =
+  setKeyPressedIn model <|
+    case keyAction of
+      KeyDown key -> key :: keyPressed
+      KeyUp key -> List.filter ((/=) key) keyPressed
+
+applySpeed : Model -> Model
+applySpeed ({ player, keyPressed } as model) =
+  case List.head keyPressed of
+    Just KeyboardLeft ->
+      player.position.x - 6
+      |> updatePlayerPositionX model player
+      |> triggerWalk
+    Just KeyboardRight ->
+      player.position.x + 6
+      |> updatePlayerPositionX model player
+      |> triggerWalk
+    _ ->
+      model
+      |> untriggerWalk
+
+updatePlayerPositionX : Model -> Player -> Int -> Model
+updatePlayerPositionX model player value =
+  value
+  |> setXIn player.position
+  |> setPositionIn player
+  |> setPlayerIn model
+
+triggerWalk : Model -> Model
+triggerWalk ({ player } as model) =
+  { player | walking =
+    case player.walking of
+      Just First -> Just Second
+      Just Second -> Just First
+      Nothing -> Just First
+  }
+  |> setPlayerIn model
+
+untriggerWalk : Model -> Model
+untriggerWalk ({ player } as model) =
+  { player | walking = Nothing }
+  |> setPlayerIn model
 
 applyGravity : Model -> Model
 applyGravity ({ player, tiles } as model) =
@@ -131,8 +201,6 @@ moreOrLess variance reference comparable =
 
 isCollisionning : List Tile -> Position -> Bool
 isCollisionning tiles position =
-  -- Tile between tile.column * tileSize and tile.column + 1 * tileSize
-  -- Tile between tile.row * tileSize and tile.row + 1 * tileSize
   List.map (isCollisionningWithOne position) tiles
   |> List.foldr isOneTrue False
 
@@ -154,8 +222,21 @@ subscriptions : Model -> Sub Msg
 subscriptions model =
   Sub.batch
     [ Browser.Events.onResize ResizeWindow
-    , if model.player.position.y > 5 then Browser.Events.onAnimationFrame AnimationFrame else Sub.none
+    , Browser.Events.onAnimationFrame AnimationFrame
+    , Sub.map (KeyHandling << KeyDown) (Browser.Events.onKeyDown keyDecoder)
+    , Sub.map (KeyHandling << KeyUp) (Browser.Events.onKeyUp keyDecoder)
     ]
+
+keyDecoder : Decoder KeyboardKey
+keyDecoder =
+  Decode.andThen toKeyboardKey (Decode.field "key" Decode.string)
+
+toKeyboardKey : String -> Decoder KeyboardKey
+toKeyboardKey value =
+  case value of
+    "ArrowLeft" -> Decode.succeed KeyboardLeft
+    "ArrowRight" -> Decode.succeed KeyboardRight
+    val -> Decode.fail val
 
 -- View Functions
 
@@ -166,7 +247,7 @@ view model =
     [ Html.node "style" []
       [ Html.text <| String.join "\n"
         [ "* { box-sizing: border-box; }"
-        , "body { margin: 0; }"
+        , "body { margin: 0; overflow: hidden; }"
         ]
       ]
     , Html.div
@@ -176,7 +257,7 @@ view model =
       , Attributes.style "background-color" defaultBackgroundColor
       ]
       [ grid model.position model.viewport
-      , playerView model.player.position
+      , playerView model.player
       ]
     ]
 
@@ -206,16 +287,23 @@ invertRow : Int -> Int
 invertRow row =
   (rowsNumber - row) + 1
 
-playerView : Position -> Html Msg
-playerView { x, y } =
+playerView : Player -> Html Msg
+playerView { position, walking } =
   Html.img
-    [ Attributes.src "/assets/Characters/platformChar_idle.png"
+    [ Attributes.src (chooseCharacterView walking)
     , Attributes.style "position" "absolute"
-    , Attributes.style "bottom" (toPx y)
-    , Attributes.style "left" (toPx x)
+    , Attributes.style "bottom" (toPx position.y)
+    , Attributes.style "left" (toPx position.x)
     , Attributes.style "z-index" "1000"
     ]
     []
+
+chooseCharacterView : Maybe Walking -> String
+chooseCharacterView walking =
+  case walking of
+    Just First -> "/assets/Characters/platformChar_walk1.png"
+    Just Second -> "/assets/Characters/platformChar_walk2.png"
+    Nothing -> "/assets/Characters/platformChar_idle.png"
 
 toPx : Int -> String
 toPx position =

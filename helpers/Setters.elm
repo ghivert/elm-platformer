@@ -42,6 +42,19 @@ setPositionIn
 setPositionIn o v =
   { o | position = v }
 
+setKeyPressed
+   : a
+  -> { b | keyPressed : a }
+  -> { b | keyPressed : a }
+setKeyPressed v o =
+  { o | keyPressed = v }
+
+setKeyPressedIn
+   : { b | keyPressed : a }
+  -> a
+  -> { b | keyPressed : a }
+setKeyPressedIn o v =
+  { o | keyPressed = v }
 setX
    : a
   -> { b | x : a }
