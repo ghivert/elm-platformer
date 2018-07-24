@@ -374,8 +374,8 @@ toKeyboardKey value =
   case value of
     "ArrowLeft" -> Decode.succeed KeyboardLeft
     "ArrowRight" -> Decode.succeed KeyboardRight
-    "Shift" -> Decode.succeed KeyboardRight
     val -> Decode.fail val
+    "Shift" -> Decode.succeed KeyboardShift
 
 -- View Functions
 
