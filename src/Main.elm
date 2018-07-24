@@ -179,9 +179,13 @@ activateWalk direction sprite =
   case direction of
     Left -> case sprite of
       Idle -> FirstLeft
+      FirstRight -> FirstLeft
+      SecondRight -> SecondLeft
       others -> others
     Right -> case sprite of
       Idle -> FirstRight
+      FirstLeft -> FirstRight
+      SecondLeft -> SecondRight
       others -> others
 
 handleKeyAction : KeyAction -> Model -> Model
