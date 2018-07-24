@@ -179,16 +179,71 @@ handleKeyAction keyAction ({ keyPressed } as model) =
       KeyUp key -> List.filter ((/=) key) keyPressed
 
 applySpeed : Model -> Model
-applySpeed ({ player, keyPressed } as model) =
+applySpeed ({ player, keyPressed, tiles, running } as model) =
+  let speed = if isRunning running then runSpeed else walkSpeed in
   case List.head keyPressed of
     Just KeyboardLeft ->
-      player.position.x - 6
-      |> updatePlayerPositionX model player
+      if isHorizontalCollisionning Left tiles player.position then
+        model
+      else
+        player.position.x - speed
+        |> toNearest64
+        |> updatePlayerPositionX model player
     Just KeyboardRight ->
-      player.position.x + 6
-      |> updatePlayerPositionX model player
+      if isHorizontalCollisionning Right tiles player.position then
+        model
+      else
+        player.position.x + speed
+        |> toNearest64
+        |> updatePlayerPositionX model player
     _ ->
       model
+
+type Direction
+  = Left
+  | Right
+
+isHorizontalCollisionning : Direction -> List Tile -> Position -> Bool
+isHorizontalCollisionning direction tiles position =
+  tiles
+  |> List.map (isHorizontalCollisionningWithOne direction position)
+  |> isOneTrue
+
+isHorizontalCollisionningWithOne : Direction -> Position -> Tile -> Bool
+isHorizontalCollisionningWithOne direction { x, y } { column, row } =
+  let playerLeftSide = x + playerMargin
+      playerRightSide = playerLeftSide + tileSize in
+  case direction of
+    Left ->
+      if playerLeftSide <= 0 then
+        True
+      else if playerLeftSide == column * tileSize then
+        isSameAltitude row y
+      else
+        False
+    Right ->
+      if playerRightSide >= colsNumber * tileSize then
+        True
+      else if playerRightSide == (column - 1) * tileSize then
+        isSameAltitude row y
+      else
+        False
+
+isSameAltitude : Int -> Int -> Bool
+isSameAltitude row y =
+  isHalfPlayerTopOnTile row y || isHalfPlayerBottomOnTile row y
+
+isHalfPlayerTopOnTile : Int -> Int -> Bool
+isHalfPlayerTopOnTile row y =
+  let tileStart = (row - 1) * tileSize
+      tileEnd = row * tileSize in
+  tileStart <= y && y + halfTile <= tileEnd
+
+isHalfPlayerBottomOnTile : Int -> Int -> Bool
+isHalfPlayerBottomOnTile row y =
+  let tileStart = (row - 1) * tileSize
+      tileEnd = row * tileSize in
+  tileStart <= y + halfTile && y + tileSize <= tileEnd
 
 updatePlayerPositionX : Model -> Player -> Int -> Model
 updatePlayerPositionX model player value =
@@ -199,7 +254,7 @@ updatePlayerPositionX model player value =
 
 applyGravity : Model -> Model
 applyGravity ({ player, tiles } as model) =
-  if isCollisionning tiles player.position then
+  if isVerticalCollisionning tiles player.position then
     model
   else
     toFloat player.position.y * 0.9
@@ -229,17 +284,18 @@ moreOrLess variance reference comparable =
   else
     False
 
-isCollisionning : List Tile -> Position -> Bool
-isCollisionning tiles position =
-  List.map (isCollisionningWithOne position) tiles
-  |> List.foldr isOneTrue False
+isVerticalCollisionning : List Tile -> Position -> Bool
+isVerticalCollisionning tiles position =
+  tiles
+  |> List.map (isVerticalCollisionningWithOne position)
+  |> isOneTrue
 
-isOneTrue : Bool -> Bool -> Bool
-isOneTrue value acc =
-  acc || value
+isOneTrue : List Bool -> Bool
+isOneTrue =
+  List.foldr (\value acc -> acc || value) False
 
-isCollisionningWithOne : Position -> Tile -> Bool
-isCollisionningWithOne { x, y } { column, row } =
+isVerticalCollisionningWithOne : Position -> Tile -> Bool
+isVerticalCollisionningWithOne { x, y } { column, row } =
   if y == row * tileSize then
     isPlayerOnTile column x
   else
