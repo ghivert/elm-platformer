@@ -18,7 +18,6 @@ type alias Model =
   , tiles : List Tile
   , player : Player
   , keyPressed : List KeyboardKey
-  , running : List Bool
   }
 
 type alias Viewport =
@@ -35,6 +34,7 @@ type alias Tile =
 type alias Player =
   { position : Position
   , walking : Maybe Walking
+  , running : List Bool
   }
 
 type Walking
@@ -111,9 +111,9 @@ start =
     , player =
       { position = Position 0 200
       , walking = Nothing
+      , running = []
       }
     , keyPressed = []
-    , running = []
     }
 
 getViewport : Cmd Msg
@@ -189,51 +189,55 @@ activateWalk walking value =
     others -> Just value
 
 handleKeyAction : KeyAction -> Model -> Model
-handleKeyAction keyAction ({ keyPressed, player, running } as model) =
+handleKeyAction keyAction ({ keyPressed, player } as model) =
   case keyAction of
     KeyDown key ->
       case key of
         KeyboardShift ->
-          True :: running
-          |> setRunningIn model
+          True :: player.running
+          |> setRunningIn player
+          |> setPlayerIn model
         others ->
           key :: keyPressed
           |> setKeyPressedIn model
     KeyUp key ->
       case key of
         KeyboardShift ->
-          running
+          player.running
           |> List.tail
           |> Maybe.withDefault []
-          |> setRunningIn model
+          |> setRunningIn player
+          |> setPlayerIn model
         others ->
           keyPressed
           |> List.filter ((/=) key)
           |> setKeyPressedIn model
 
 applySpeed : Model -> Model
-applySpeed ({ player, keyPressed, tiles, running } as model) =
-  let speed = if isRunning running then runSpeed else walkSpeed in
+applySpeed ({ player, keyPressed, tiles } as model) =
   case List.head keyPressed of
     Just KeyboardLeft ->
       if isHorizontalCollisionning Left tiles player.position then
         model
       else
-        player.position.x - speed
-        |> toNearest64
-        |> updatePlayerPositionX model player
+        increaseOrDecreaseSpeed (-) model player
     Just KeyboardRight ->
       if isHorizontalCollisionning Right tiles player.position then
         model
       else
-        player.position.x + speed
-        |> toNearest64
-        |> updatePlayerPositionX model player
+        increaseOrDecreaseSpeed (+) model player
     _ ->
       model
 
-isRunning : List Bool -> Bool
-isRunning = not << List.isEmpty
+increaseOrDecreaseSpeed : (Int -> Int -> Int) -> Model -> Player -> Model
+increaseOrDecreaseSpeed operator model player =
+  let speed = if isWalking player then walkSpeed else runSpeed in
+  operator player.position.x speed
+  |> toNearest64
+  |> updatePlayerPositionX model player
+
+isWalking : Player -> Bool
+isWalking = List.isEmpty << .running
 
 type Direction
   = Left
@@ -374,8 +378,8 @@ toKeyboardKey value =
   case value of
     "ArrowLeft" -> Decode.succeed KeyboardLeft
     "ArrowRight" -> Decode.succeed KeyboardRight
-    val -> Decode.fail val
     "Shift" -> Decode.succeed KeyboardShift
+    val -> Decode.fail (Debug.log "val" val)
 
 -- View Functions
 
