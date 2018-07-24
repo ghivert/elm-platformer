@@ -18,6 +18,7 @@ type alias Model =
   , tiles : List Tile
   , player : Player
   , keyPressed : List KeyboardKey
+  , running : List Bool
   }
 
 type alias Viewport =
@@ -64,6 +65,7 @@ type KeyboardKey
   | KeyboardLeft
   | KeyboardRight
   | KeyboardSpace
+  | KeyboardShift
 
 tileSize : Int
 tileSize = 64
@@ -79,6 +81,12 @@ rowsNumber = 15
 
 colsNumber : Int
 colsNumber = 30
+
+walkSpeed : Int
+walkSpeed = 6
+
+runSpeed : Int
+runSpeed = 12
 
 defaultBackgroundColor : String
 defaultBackgroundColor = "#DFF6FF"
@@ -97,7 +105,16 @@ init = always (start, getViewport)
 
 start : Model
 start =
-  Model (Viewport 0 0) 0 ground { position = Position 0 200, walking = Nothing } []
+    { viewport = Viewport 0 0
+    , position = 0
+    , tiles = ground
+    , player =
+      { position = Position 0 200
+      , walking = Nothing
+      }
+    , keyPressed = []
+    , running = []
+    }
 
 getViewport : Cmd Msg
 getViewport = Task.perform ViewportSize Dom.getViewport
@@ -152,7 +169,7 @@ triggerSprite ({ player, keyPressed } as model) =
       Just KeyboardRight -> activateWalk player.walking FirstRight
       Just KeyboardUp -> player.walking
       Just KeyboardSpace -> Just Jump
-      Nothing -> Nothing
+      _ -> Nothing
   }
   |> setPlayerIn model
 
@@ -172,11 +189,27 @@ activateWalk walking value =
     others -> Just value
 
 handleKeyAction : KeyAction -> Model -> Model
-handleKeyAction keyAction ({ keyPressed } as model) =
-  setKeyPressedIn model <|
-    case keyAction of
-      KeyDown key -> key :: keyPressed
-      KeyUp key -> List.filter ((/=) key) keyPressed
+handleKeyAction keyAction ({ keyPressed, player, running } as model) =
+  case keyAction of
+    KeyDown key ->
+      case key of
+        KeyboardShift ->
+          True :: running
+          |> setRunningIn model
+        others ->
+          key :: keyPressed
+          |> setKeyPressedIn model
+    KeyUp key ->
+      case key of
+        KeyboardShift ->
+          running
+          |> List.tail
+          |> Maybe.withDefault []
+          |> setRunningIn model
+        others ->
+          keyPressed
+          |> List.filter ((/=) key)
+          |> setKeyPressedIn model
 
 applySpeed : Model -> Model
 applySpeed ({ player, keyPressed, tiles, running } as model) =
@@ -198,6 +231,9 @@ applySpeed ({ player, keyPressed, tiles, running } as model) =
         |> updatePlayerPositionX model player
     _ ->
       model
+
+isRunning : List Bool -> Bool
+isRunning = not << List.isEmpty
 
 type Direction
   = Left
@@ -338,6 +374,7 @@ toKeyboardKey value =
   case value of
     "ArrowLeft" -> Decode.succeed KeyboardLeft
     "ArrowRight" -> Decode.succeed KeyboardRight
+    "Shift" -> Decode.succeed KeyboardRight
     val -> Decode.fail val
 
 -- View Functions

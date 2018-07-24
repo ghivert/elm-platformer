@@ -55,6 +55,21 @@ setKeyPressedIn
   -> { b | keyPressed : a }
 setKeyPressedIn o v =
   { o | keyPressed = v }
+
+setRunning
+   : a
+  -> { b | running : a }
+  -> { b | running : a }
+setRunning v o =
+  { o | running = v }
+
+setRunningIn
+   : { b | running : a }
+  -> a
+  -> { b | running : a }
+setRunningIn o v =
+  { o | running = v }
+
 setX
    : a
   -> { b | x : a }
