@@ -37,8 +37,11 @@ type alias Player =
   }
 
 type Walking
-  = First
-  | Second
+  = FirstLeft
+  | SecondLeft
+  | FirstRight
+  | SecondRight
+  | Jump
 
 type alias Position =
   { x : Int
@@ -50,6 +53,7 @@ type Msg
   | ResizeWindow Int Int
   | AnimationFrame Posix
   | KeyHandling KeyAction
+  | Timer Posix
 
 type KeyAction
   = KeyDown KeyboardKey
@@ -110,18 +114,62 @@ saveViewportIn model width height =
   |> Update.identity
 
 update : Msg -> Model -> (Model, Cmd Msg)
-update msg model =
+update msg ({ player } as model) =
   case msg of
     ViewportSize { viewport } -> saveViewportIn model viewport.width viewport.height
     ResizeWindow width height -> saveViewportIn model (toFloat width) (toFloat height)
+    Timer posix ->
+      { player | walking =
+        player.walking
+        |> Maybe.map toggleWalk
+      }
+      |> setPlayerIn model
+      |> Update.identity
     KeyHandling keyAction ->
       handleKeyAction keyAction model
+      |> triggerSprite
       |> Update.identity
     AnimationFrame time ->
       model
       |> applySpeed
       |> applyGravity
       |> Update.identity
+
+toggleWalk : Walking -> Walking
+toggleWalk walking =
+  case walking of
+    FirstLeft -> SecondLeft
+    SecondLeft -> FirstLeft
+    FirstRight -> SecondRight
+    SecondRight -> FirstRight
+    others -> others
+
+triggerSprite : Model -> Model
+triggerSprite ({ player, keyPressed } as model) =
+  { player | walking =
+    case List.head keyPressed of
+      Just KeyboardLeft -> activateWalk player.walking FirstLeft
+      Just KeyboardRight -> activateWalk player.walking FirstRight
+      Just KeyboardUp -> player.walking
+      Just KeyboardSpace -> Just Jump
+      Nothing -> Nothing
+  }
+  |> setPlayerIn model
+
+activateWalk : Maybe Walking -> Walking -> Maybe Walking
+activateWalk walking value =
+  case value of
+    FirstLeft ->
+      case walking of
+        Just FirstLeft -> Just FirstLeft
+        Just SecondLeft -> Just SecondLeft
+        others -> Just FirstLeft
+    FirstRight ->
+      case walking of
+        Just FirstRight -> Just FirstRight
+        Just SecondRight -> Just SecondRight
+        others -> Just FirstRight
+    others -> Just value
 
 handleKeyAction : KeyAction -> Model -> Model
 handleKeyAction keyAction ({ keyPressed } as model) =
@@ -136,35 +184,17 @@ applySpeed ({ player, keyPressed } as model) =
     Just KeyboardLeft ->
       player.position.x - 6
       |> updatePlayerPositionX model player
-      |> triggerWalk
     Just KeyboardRight ->
       player.position.x + 6
       |> updatePlayerPositionX model player
-      |> triggerWalk
     _ ->
       model
-      |> untriggerWalk
 
 updatePlayerPositionX : Model -> Player -> Int -> Model
 updatePlayerPositionX model player value =
   value
   |> setXIn player.position
   |> setPositionIn player
-  |> setPlayerIn model
-
-triggerWalk : Model -> Model
-triggerWalk ({ player } as model) =
-  { player | walking =
-    case player.walking of
-      Just First -> Just Second
-      Just Second -> Just First
-      Nothing -> Just First
-  }
-  |> setPlayerIn model
-
-untriggerWalk : Model -> Model
-untriggerWalk ({ player } as model) =
-  { player | walking = Nothing }
   |> setPlayerIn model
 
 applyGravity : Model -> Model
@@ -240,6 +270,7 @@ subscriptions model =
     , Browser.Events.onAnimationFrame AnimationFrame
     , Sub.map (KeyHandling << KeyDown) (Browser.Events.onKeyDown keyDecoder)
     , Sub.map (KeyHandling << KeyUp) (Browser.Events.onKeyUp keyDecoder)
+    , Time.every 100 Timer
     ]
 
 keyDecoder : Decoder KeyboardKey
@@ -316,8 +347,11 @@ playerView { position, walking } =
 chooseCharacterView : Maybe Walking -> String
 chooseCharacterView walking =
   case walking of
-    Just First -> "/assets/Characters/platformChar_walk1.png"
-    Just Second -> "/assets/Characters/platformChar_walk2.png"
+    Just FirstLeft -> "/assets/Characters/platformChar_walk1_left.png"
+    Just SecondLeft -> "/assets/Characters/platformChar_walk2_left.png"
+    Just FirstRight -> "/assets/Characters/platformChar_walk1_right.png"
+    Just SecondRight -> "/assets/Characters/platformChar_walk2_right.png"
+    Just Jump -> "/assets/Characters/platformChar_jump.png"
     Nothing -> "/assets/Characters/platformChar_idle.png"
 
 toPx : Int -> String
