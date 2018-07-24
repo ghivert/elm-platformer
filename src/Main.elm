@@ -211,12 +211,27 @@ isOneTrue value acc =
 isCollisionningWithOne : Position -> Tile -> Bool
 isCollisionningWithOne { x, y } { column, row } =
   if y == row * tileSize then
-    if ((column - 1) * tileSize <= x + playerMargin && x + playerMargin + halfTile <= column * tileSize) || ((column - 1) * tileSize <= x + playerMargin + halfTile && x + playerMargin + tileSize <= column * tileSize) then
-      True
-    else
-      False
+    isPlayerOnTile column x
   else
     False
+
+isPlayerOnTile : Int -> Int -> Bool
+isPlayerOnTile column x =
+  isHalfPlayerLeftOnTile column x || isHalfPlayerRightOnTile column x
+
+isHalfPlayerLeftOnTile : Int -> Int -> Bool
+isHalfPlayerLeftOnTile column x =
+  let playerWithoutMargin = x + playerMargin
+      tileStart = (column - 1) * tileSize
+      tileEnd = column * tileSize in
+  tileStart <= playerWithoutMargin && playerWithoutMargin + halfTile <= tileEnd
+
+isHalfPlayerRightOnTile : Int -> Int -> Bool
+isHalfPlayerRightOnTile column x =
+  let playerWithoutMargin = x + playerMargin
+      tileStart = (column - 1) * tileSize
+      tileEnd = column * tileSize in
+  tileStart <= playerWithoutMargin + halfTile && playerWithoutMargin + tileSize <= tileEnd
 
 subscriptions : Model -> Sub Msg
 subscriptions model =
