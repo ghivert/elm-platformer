@@ -395,13 +395,13 @@ view model =
       , Attributes.style "overflow" "hidden"
       , Attributes.style "background-color" defaultBackgroundColor
       ]
-      [ grid model.position model.viewport
+      [ grid model
       , playerView model.player
       ]
     ]
 
-grid : Int -> Viewport -> Html Msg
-grid position { width, height } =
+grid : Model -> Html Msg
+grid { position, viewport, tiles } =
   Html.div
     [ Attributes.style "display" "grid"
     , Attributes.style "min-height" "100%"
@@ -411,7 +411,7 @@ grid position { width, height } =
     , Attributes.style "bottom" "0"
     , Attributes.style "left" (toPx position)
     ]
-    (List.map tileView ground)
+    (List.map tileView tiles)
 
 tileView : Tile -> Html Msg
 tileView { column, row, content } =
