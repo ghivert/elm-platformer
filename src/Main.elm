@@ -135,8 +135,10 @@ saveViewportIn model width height =
 update : Msg -> Model -> (Model, Cmd Msg)
 update msg ({ player } as model) =
   case msg of
-    ViewportSize { viewport } -> saveViewportIn model viewport.width viewport.height
-    ResizeWindow width height -> saveViewportIn model (toFloat width) (toFloat height)
+    ViewportSize { viewport } ->
+      saveViewportIn model viewport.width viewport.height
+    ResizeWindow width height ->
+      saveViewportIn model (toFloat width) (toFloat height)
     Timer posix ->
       { player | sprite =
         player.sprite
@@ -230,19 +232,29 @@ applySpeed ({ player, keyPressed, tiles, position } as model) =
     _ ->
       model
 
-increaseOrDecreaseSpeed : Direction -> (Int -> Int -> Int) -> (Int -> Int -> Int) -> Model -> Model
-increaseOrDecreaseSpeed direction playerOperator worldOperator ({ position, player } as model) =
-  let speed = if isWalking player then walkSpeed else runSpeed in
-  if isNeededToMoveWorldRight direction model || isNeededToMoveWorldLeft direction player then
-    worldOperator position speed
+increaseOrDecreaseSpeed
+   : Direction
+  -> (Int -> Int -> Int)
+  -> (Int -> Int -> Int)
+  -> Model
+  -> Model
+increaseOrDecreaseSpeed direction playerOperator worldOperator model =
+  let speed = if isWalking model.player then walkSpeed else runSpeed in
+  if isNeededToMoveWorld direction model then
+    worldOperator model.position speed
     |> setPositionIn model
   else
-    playerOperator player.position.x speed
+    playerOperator model.player.position.x speed
     |> toNearest64
-    |> updatePlayerPositionX model player
+    |> updatePlayerPositionX model model.player
+
+isNeededToMoveWorld : Direction -> Model -> Bool
+isNeededToMoveWorld direction ({ player } as model)=
+  isNeededToMoveWorldRight direction model
+  || isNeededToMoveWorldLeft direction model
 
 isNeededToMoveWorldRight : Direction -> Model -> Bool
-isNeededToMoveWorldRight direction ({ player, viewport, position } as model) =
+isNeededToMoveWorldRight direction { player, viewport, position } =
   isPlayerOnHalfScreenSize player viewport
     && isRight direction
     && isWorldNotFinished position viewport
@@ -255,9 +267,9 @@ isWorldNotFinished : Int -> Viewport -> Bool
 isWorldNotFinished position { width } =
   (round width) - position + halfTile <= colsNumber * tileSize
 
-isNeededToMoveWorldLeft : Direction -> Player -> Bool
-isNeededToMoveWorldLeft direction { position } =
-  position.x <= halfTile && isLeft direction
+isNeededToMoveWorldLeft : Direction -> Model -> Bool
+isNeededToMoveWorldLeft direction { position, player } =
+  player.position.x <= halfTile && isLeft direction && position < 0
 
 isWalking : Player -> Bool
 isWalking = List.isEmpty << .running
@@ -282,7 +294,12 @@ isHorizontalCollisionning direction ({ position, tiles, player } as model) =
   || isCollisionningOnLeftSide direction player.position.x position
   || isCollisionningOnRightSide direction (Tuple.second playerSides) position
 
-isCollisionningWithTiles : Direction -> (Int, Int) -> Player -> List Tile -> Bool
+isCollisionningWithTiles
+   : Direction
+  -> (Int, Int)
+  -> Player
+  -> List Tile
+  -> Bool
 isCollisionningWithTiles direction playerSides { position } tiles =
   tiles
   |> List.map (isHorizontalCollisionningWithOne direction playerSides position)
@@ -326,8 +343,14 @@ isBackgroundPositionAtBeginning : Int -> Bool
 isBackgroundPositionAtBeginning position =
   position >= 0
 
-isHorizontalCollisionningWithOne : Direction -> (Int, Int) -> Position -> Tile -> Bool
-isHorizontalCollisionningWithOne direction (playerLeftSide, playerRightSide) { y } { column, row } =
+isHorizontalCollisionningWithOne
+   : Direction
+  -> (Int, Int)
+  -> Position
+  -> Tile
+  -> Bool
+isHorizontalCollisionningWithOne direction playerSides { y } { column, row } =
+  let (playerLeftSide, playerRightSide) = playerSides in
   case direction of
     Left ->
       if isPlayerOnLeftTileSide playerLeftSide column then
@@ -391,7 +414,8 @@ toNearest64 : Int -> Int
 toNearest64 number =
   List.range 1 rowsNumber
   |> List.map ((*) 64)
-  |> List.map (\value -> if moreOrLess 3 value number then Just value else Nothing)
+  |> List.map
+    (\value -> if moreOrLess 3 value number then Just value else Nothing)
   |> List.foldr keepJustValue number
 
 keepJustValue : Maybe Int -> Int -> Int
@@ -402,7 +426,8 @@ keepJustValue may acc =
 
 moreOrLess : Int -> Int -> Int -> Bool
 moreOrLess variance reference comparable =
-  if reference - variance <= comparable && comparable <= reference + variance then
+  if reference - variance <= comparable
+     && comparable <= reference + variance then
     True
   else
     False
@@ -433,14 +458,16 @@ isHalfPlayerLeftOnTile column x =
   let playerWithoutMargin = x + playerMargin
       tileStart = (column - 1) * tileSize
       tileEnd = column * tileSize in
-  tileStart <= playerWithoutMargin && playerWithoutMargin + halfTile <= tileEnd
+  tileStart <= playerWithoutMargin
+  && playerWithoutMargin + halfTile <= tileEnd
 
 isHalfPlayerRightOnTile : Int -> Int -> Bool
 isHalfPlayerRightOnTile column x =
   let playerWithoutMargin = x + playerMargin
       tileStart = (column - 1) * tileSize
       tileEnd = column * tileSize in
-  tileStart <= playerWithoutMargin + halfTile && playerWithoutMargin + tileSize <= tileEnd
+  tileStart <= playerWithoutMargin + halfTile
+  && playerWithoutMargin + tileSize <= tileEnd
 
 subscriptions : Model -> Sub Msg
 subscriptions model =
