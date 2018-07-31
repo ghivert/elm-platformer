@@ -215,27 +215,45 @@ handleKeyAction keyAction ({ keyPressed, player } as model) =
           |> setKeyPressedIn model
 
 applySpeed : Model -> Model
-applySpeed ({ player, keyPressed, tiles } as model) =
+applySpeed ({ player, keyPressed, tiles, position } as model) =
   case List.head keyPressed of
     Just KeyboardLeft ->
-      if isHorizontalCollisionning Left tiles player.position then
+      if isHorizontalCollisionning Left model then
         model
       else
-        increaseOrDecreaseSpeed (-) model player
+        increaseOrDecreaseSpeed Left (-) (+) model
     Just KeyboardRight ->
-      if isHorizontalCollisionning Right tiles player.position then
+      if isHorizontalCollisionning Right model then
         model
       else
-        increaseOrDecreaseSpeed (+) model player
+        increaseOrDecreaseSpeed Right (+) (-) model
     _ ->
       model
 
-increaseOrDecreaseSpeed : (Int -> Int -> Int) -> Model -> Player -> Model
-increaseOrDecreaseSpeed operator model player =
+increaseOrDecreaseSpeed : Direction -> (Int -> Int -> Int) -> (Int -> Int -> Int) -> Model -> Model
+increaseOrDecreaseSpeed direction playerOperator worldOperator ({ position, player } as model) =
   let speed = if isWalking player then walkSpeed else runSpeed in
-  operator player.position.x speed
-  |> toNearest64
-  |> updatePlayerPositionX model player
+  if isNeededToMoveWorld direction model || (player.position.x <= halfTile && isLeft direction) then
+    worldOperator position speed
+    |> setPositionIn model
+  else
+    playerOperator player.position.x speed
+    |> toNearest64
+    |> updatePlayerPositionX model player
+
+isNeededToMoveWorld : Direction -> Model -> Bool
+isNeededToMoveWorld direction ({ player, viewport, position } as model) =
+  isPlayerOnHalfScreenSize player viewport
+    && isRight direction
+    && isWorldNotFinished position viewport
+
+isPlayerOnHalfScreenSize : Player -> Viewport -> Bool
+isPlayerOnHalfScreenSize { position } { width } =
+  position.x + 8 * tileSize >= round width
+
+isWorldNotFinished : Int -> Viewport -> Bool
+isWorldNotFinished position { width } =
+  (round width) - position + halfTile <= colsNumber * tileSize
 
 isWalking : Player -> Bool
 isWalking = List.isEmpty << .running
@@ -244,26 +262,36 @@ type Direction
   = Left
   | Right
 
-isHorizontalCollisionning : Direction -> List Tile -> Position -> Bool
-isHorizontalCollisionning direction tiles position =
+isRight : Direction -> Bool
+isRight direction =
+  case direction of
+    Right -> True
+    Left -> False
+
+isLeft : Direction -> Bool
+isLeft = not << isRight
+
+isHorizontalCollisionning : Direction -> Model -> Bool
+isHorizontalCollisionning direction ({ position, tiles, player } as model) =
   tiles
-  |> List.map (isHorizontalCollisionningWithOne direction position)
+  |> List.map (isHorizontalCollisionningWithOne direction model)
   |> isOneTrue
 
-isHorizontalCollisionningWithOne : Direction -> Position -> Tile -> Bool
-isHorizontalCollisionningWithOne direction { x, y } { column, row } =
-  let playerLeftSide = x + playerMargin
+isHorizontalCollisionningWithOne : Direction -> Model -> Tile -> Bool
+isHorizontalCollisionningWithOne direction ({ position, player } as model) { column, row } =
+  let { x, y } = player.position
+      playerLeftSide = x + playerMargin
       playerRightSide = playerLeftSide + tileSize in
   case direction of
     Left ->
-      if playerLeftSide <= 0 then
+      if playerLeftSide <= 44 && position >= 0 then
         True
       else if playerLeftSide == column * tileSize then
         isSameAltitude row y
       else
         False
     Right ->
-      if playerRightSide >= colsNumber * tileSize then
+      if playerRightSide - position >= colsNumber * tileSize - tileSize && position <= colsNumber * tileSize then
         True
       else if playerRightSide == (column - 1) * tileSize then
         isSameAltitude row y
