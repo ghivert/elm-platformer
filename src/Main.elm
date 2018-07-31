@@ -111,7 +111,7 @@ start =
     , position = 0
     , tiles = ground
     , player =
-      { position = Position 0 200
+      { position = Position 32 200
       , sprite = Idle
       , running = []
       }
@@ -233,7 +233,7 @@ applySpeed ({ player, keyPressed, tiles, position } as model) =
 increaseOrDecreaseSpeed : Direction -> (Int -> Int -> Int) -> (Int -> Int -> Int) -> Model -> Model
 increaseOrDecreaseSpeed direction playerOperator worldOperator ({ position, player } as model) =
   let speed = if isWalking player then walkSpeed else runSpeed in
-  if isNeededToMoveWorld direction model || (player.position.x <= halfTile && isLeft direction) then
+  if isNeededToMoveWorldRight direction model || isNeededToMoveWorldLeft direction player then
     worldOperator position speed
     |> setPositionIn model
   else
@@ -241,8 +241,8 @@ increaseOrDecreaseSpeed direction playerOperator worldOperator ({ position, play
     |> toNearest64
     |> updatePlayerPositionX model player
 
-isNeededToMoveWorld : Direction -> Model -> Bool
-isNeededToMoveWorld direction ({ player, viewport, position } as model) =
+isNeededToMoveWorldRight : Direction -> Model -> Bool
+isNeededToMoveWorldRight direction ({ player, viewport, position } as model) =
   isPlayerOnHalfScreenSize player viewport
     && isRight direction
     && isWorldNotFinished position viewport
@@ -254,6 +254,10 @@ isPlayerOnHalfScreenSize { position } { width } =
 isWorldNotFinished : Int -> Viewport -> Bool
 isWorldNotFinished position { width } =
   (round width) - position + halfTile <= colsNumber * tileSize
+
+isNeededToMoveWorldLeft : Direction -> Player -> Bool
+isNeededToMoveWorldLeft direction { position } =
+  position.x <= halfTile && isLeft direction
 
 isWalking : Player -> Bool
 isWalking = List.isEmpty << .running
@@ -273,45 +277,95 @@ isLeft = not << isRight
 
 isHorizontalCollisionning : Direction -> Model -> Bool
 isHorizontalCollisionning direction ({ position, tiles, player } as model) =
+  let playerSides = computePlayerSides player.position in
+  isCollisionningWithTiles direction playerSides player tiles
+  || isCollisionningOnLeftSide direction player.position.x position
+  || isCollisionningOnRightSide direction (Tuple.second playerSides) position
+
+isCollisionningWithTiles : Direction -> (Int, Int) -> Player -> List Tile -> Bool
+isCollisionningWithTiles direction playerSides { position } tiles =
   tiles
-  |> List.map (isHorizontalCollisionningWithOne direction model)
+  |> List.map (isHorizontalCollisionningWithOne direction playerSides position)
   |> isOneTrue
 
-isHorizontalCollisionningWithOne : Direction -> Model -> Tile -> Bool
-isHorizontalCollisionningWithOne direction ({ position, player } as model) { column, row } =
-  let { x, y } = player.position
-      playerLeftSide = x + playerMargin
+computePlayerSides : Position -> (Int, Int)
+computePlayerSides { x } =
+  let playerLeftSide = x + playerMargin
       playerRightSide = playerLeftSide + tileSize in
+  (playerLeftSide, playerRightSide)
+
+isCollisionningOnRightSide : Direction -> Int -> Int -> Bool
+isCollisionningOnRightSide direction playerRightSide position =
+  case direction of
+    Left -> False
+    Right ->
+      isPlayerOnRightScreenEdge playerRightSide position
+      && isBackgroundPositionAtEnd position
+
+isPlayerOnRightScreenEdge : Int -> Int -> Bool
+isPlayerOnRightScreenEdge playerRightSide position =
+  playerRightSide - position >= (colsNumber - 1) * tileSize
+
+isBackgroundPositionAtEnd : Int -> Bool
+isBackgroundPositionAtEnd position =
+  position <= colsNumber * tileSize
+
+isCollisionningOnLeftSide : Direction -> Int -> Int -> Bool
+isCollisionningOnLeftSide direction playerLeftSide position =
+  case direction of
+    Right -> False
+    Left ->
+      isPlayerOnLeftScreenEdge playerLeftSide
+      && isBackgroundPositionAtBeginning position
+
+isPlayerOnLeftScreenEdge : Int -> Bool
+isPlayerOnLeftScreenEdge playerLeftSide =
+  playerLeftSide <= halfTile
+
+isBackgroundPositionAtBeginning : Int -> Bool
+isBackgroundPositionAtBeginning position =
+  position >= 0
+
+isHorizontalCollisionningWithOne : Direction -> (Int, Int) -> Position -> Tile -> Bool
+isHorizontalCollisionningWithOne direction (playerLeftSide, playerRightSide) { y } { column, row } =
   case direction of
     Left ->
-      if playerLeftSide <= 44 && position >= 0 then
-        True
-      else if playerLeftSide == column * tileSize then
+      if isPlayerOnLeftTileSide playerLeftSide column then
         isSameAltitude row y
       else
         False
     Right ->
-      if playerRightSide - position >= colsNumber * tileSize - tileSize && position <= colsNumber * tileSize then
-        True
-      else if playerRightSide == (column - 1) * tileSize then
+      if isPlayerOnRightTileSide playerRightSide column then
         isSameAltitude row y
       else
         False
 
+isPlayerOnLeftTileSide : Int -> Int -> Bool
+isPlayerOnLeftTileSide playerLeftSide column =
+  playerLeftSide == column * tileSize
+
+isPlayerOnRightTileSide : Int -> Int -> Bool
+isPlayerOnRightTileSide playerRightSide column =
+  playerRightSide == (column - 1) * tileSize
+
 isSameAltitude : Int -> Int -> Bool
 isSameAltitude row y =
-  isHalfPlayerTopOnTile row y || isHalfPlayerBottomOnTile row y
+  let tileStartAndEnd = computeTileStartAndEnd row in
+  isHalfPlayerTopOnTile tileStartAndEnd y
+  || isHalfPlayerBottomOnTile tileStartAndEnd y
 
-isHalfPlayerTopOnTile : Int -> Int -> Bool
-isHalfPlayerTopOnTile row y =
+computeTileStartAndEnd : Int -> (Int, Int)
+computeTileStartAndEnd row =
   let tileStart = (row - 1) * tileSize
       tileEnd = row * tileSize in
+  (tileStart, tileEnd)
+
+isHalfPlayerTopOnTile : (Int, Int) -> Int -> Bool
+isHalfPlayerTopOnTile (tileStart, tileEnd) y =
   tileStart <= y && y + halfTile <= tileEnd
 
-isHalfPlayerBottomOnTile : Int -> Int -> Bool
-isHalfPlayerBottomOnTile row y =
-  let tileStart = (row - 1) * tileSize
-      tileEnd = row * tileSize in
+isHalfPlayerBottomOnTile : (Int, Int) -> Int -> Bool
+isHalfPlayerBottomOnTile (tileStart, tileEnd) y =
   tileStart <= y + halfTile && y + tileSize <= tileEnd
 
 updatePlayerPositionX : Model -> Player -> Int -> Model
