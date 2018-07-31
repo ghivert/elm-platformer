@@ -5,6 +5,7 @@ import Browser.Dom as Dom
 import Browser.Events
 import Html exposing (Html)
 import Html.Attributes as Attributes
+import Html.Lazy as Html
 import Task exposing (Task)
 import Update
 import Time exposing (Posix)
@@ -405,17 +406,23 @@ view model =
     ]
 
 grid : Model -> Html Msg
-grid { position, viewport, tiles } =
+grid { position, tiles } =
+  Html.div
+    [ Attributes.style "position" "absolute"
+    , Attributes.style "bottom" "0"
+    , Attributes.style "left" (toPx position)
+    ]
+    [ Html.lazy gridContent tiles ]
+
+gridContent : List Tile -> Html Msg
+gridContent tiles =
   Html.div
     [ Attributes.style "display" "grid"
     , Attributes.style "min-height" "100%"
     , Attributes.style "grid-template-rows" (cssRepeat rowsNumber tileSize)
     , Attributes.style "grid-template-columns" (cssRepeat colsNumber tileSize)
-    , Attributes.style "position" "absolute"
-    , Attributes.style "bottom" "0"
-    , Attributes.style "left" (toPx position)
     ]
-    (List.map tileView tiles)
+    (List.map (Html.lazy tileView) tiles)
 
 tileView : Tile -> Html Msg
 tileView { column, row, content } =
