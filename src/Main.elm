@@ -10,6 +10,7 @@ import Task exposing (Task)
 import Update
 import Time exposing (Posix)
 import Json.Decode as Decode exposing (Decoder)
+import Maybe.Extra as Maybe
 
 import Setters exposing (..)
 
@@ -34,6 +35,8 @@ type alias Tile =
 
 type alias Player =
   { position : Position
+  , jumping : Maybe Float
+  , jumpTimer : Maybe Float
   , sprite : Sprite
   , running : List Bool
   }
@@ -57,6 +60,7 @@ type Msg
   | AnimationFrame Posix
   | KeyHandling KeyAction
   | Timer Posix
+  | JumpTimer Posix
 
 type KeyAction
   = KeyDown KeyboardKey
@@ -90,6 +94,24 @@ walkSpeed = 6
 runSpeed : Int
 runSpeed = 12
 
+jumpTimerInterval : Float
+jumpTimerInterval = 10
+
+jumpTimerIncreasing : Float
+jumpTimerIncreasing = 0.003
+
+gravityPower : Float
+gravityPower = 0.9
+
+jumpDecceleration : Float
+jumpDecceleration = 0.0125
+
+baseJumpForce : Float
+baseJumpForce = 1.300
+
+baseJumpTimer : Float
+baseJumpTimer = 1000
+
 defaultBackgroundColor : String
 defaultBackgroundColor = "#DFF6FF"
 
@@ -112,6 +134,8 @@ start =
     , tiles = ground
     , player =
       { position = Position 32 200
+      , jumping = Nothing
+      , jumpTimer = Nothing
       , sprite = Idle
       , running = []
       }
@@ -146,6 +170,20 @@ update msg ({ player } as model) =
       }
       |> setPlayerIn model
       |> Update.identity
+    JumpTimer _ ->
+      { player
+        | jumping = Maybe.map ((+) jumpTimerIncreasing) player.jumping
+        , jumpTimer = player.jumpTimer
+          |> Maybe.andThen
+            (\timer ->
+              if timer - jumpTimerInterval == 0 then
+                Nothing
+              else
+                Just (timer - jumpTimerInterval)
+            )
+      }
+      |> setPlayerIn model
+      |> Update.identity
     KeyHandling keyAction ->
       handleKeyAction keyAction model
       |> triggerSprite
@@ -153,6 +191,7 @@ update msg ({ player } as model) =
     AnimationFrame time ->
       model
       |> applySpeed
+      |> applyJump
       |> applyGravity
       |> Update.identity
 
@@ -168,12 +207,14 @@ toggleWalk walking =
 triggerSprite : Model -> Model
 triggerSprite ({ player, keyPressed } as model) =
   { player | sprite =
-    case List.head keyPressed of
-      Just KeyboardLeft -> activateWalk Left player.sprite
-      Just KeyboardRight -> activateWalk Right player.sprite
-      Just KeyboardUp -> player.sprite
-      Just KeyboardSpace -> Jump
-      _ -> Idle
+    if Maybe.isJust player.jumping then
+      Jump
+    else
+      case List.head keyPressed of
+        Just KeyboardLeft -> activateWalk Left player.sprite
+        Just KeyboardRight -> activateWalk Right player.sprite
+        Just KeyboardUp -> player.sprite
+        _ -> Idle
   }
   |> setPlayerIn model
 
@@ -200,6 +241,16 @@ handleKeyAction keyAction ({ keyPressed, player } as model) =
           True :: player.running
           |> setRunningIn player
           |> setPlayerIn model
+        KeyboardSpace ->
+          if Maybe.isJust player.jumping then
+            model
+          else
+            { player
+              | jumping = Just baseJumpForce
+              , jumpTimer = Just baseJumpTimer
+              , sprite = Jump
+            }
+            |> setPlayerIn model
         others ->
           key :: keyPressed
           |> setKeyPressedIn model
@@ -210,6 +261,9 @@ handleKeyAction keyAction ({ keyPressed, player } as model) =
           |> List.tail
           |> Maybe.withDefault []
           |> setRunningIn player
+          |> setPlayerIn model
+        KeyboardSpace ->
+          { player | jumpTimer = Nothing }
           |> setPlayerIn model
         others ->
           keyPressed
@@ -398,12 +452,30 @@ updatePlayerPositionX model player value =
   |> setPositionIn player
   |> setPlayerIn model
 
+applyJump : Model -> Model
+applyJump ({ player } as model) =
+  case player.jumping of
+    Just value ->
+      toFloat player.position.y * value
+      |> round
+      |> setYIn player.position
+      |> setPositionIn player
+      |> setJumping (if value - jumpDecceleration > 1.0 then Just (value - jumpDecceleration) else Just 1.0)
+      |> setPlayerIn model
+    Nothing ->
+      model
+
 applyGravity : Model -> Model
 applyGravity ({ player, tiles } as model) =
   if isVerticalCollisionning tiles player.position then
-    model
+    if Maybe.isJust player.jumping then
+      { player | jumping = Nothing, sprite = Idle, jumpTimer = Nothing }
+      |> setPlayerIn model
+      |> triggerSprite
+    else
+      model
   else
-    toFloat player.position.y * 0.9
+    toFloat player.position.y * gravityPower
     |> round
     |> toNearest64
     |> setYIn player.position
@@ -470,13 +542,16 @@ isHalfPlayerRightOnTile column x =
   && playerWithoutMargin + tileSize <= tileEnd
 
 subscriptions : Model -> Sub Msg
-subscriptions model =
+subscriptions ({ player } as model) =
   Sub.batch
     [ Browser.Events.onResize ResizeWindow
     , Browser.Events.onAnimationFrame AnimationFrame
     , Sub.map (KeyHandling << KeyDown) (Browser.Events.onKeyDown keyDecoder)
     , Sub.map (KeyHandling << KeyUp) (Browser.Events.onKeyUp keyDecoder)
     , Time.every 100 Timer
+    , case player.jumpTimer of
+      Nothing -> Sub.none
+      Just _ -> Time.every jumpTimerInterval JumpTimer
     ]
 
 keyDecoder : Decoder KeyboardKey
@@ -489,6 +564,8 @@ toKeyboardKey value =
     "ArrowLeft" -> Decode.succeed KeyboardLeft
     "ArrowRight" -> Decode.succeed KeyboardRight
     "Shift" -> Decode.succeed KeyboardShift
+    " " -> Decode.succeed KeyboardSpace
+    " " -> Decode.succeed KeyboardSpace
     val -> Decode.fail (Debug.log "val" val)
 
 -- View Functions
