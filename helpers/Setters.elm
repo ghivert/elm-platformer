@@ -97,3 +97,17 @@ setYIn
   -> { b | y : a }
 setYIn o v =
   { o | y = v }
+
+setJumping
+   : a
+  -> { b | jumping : a }
+  -> { b | jumping : a }
+setJumping v o =
+  { o | jumping = v }
+
+setJumpingIn
+   : { b | jumping : a }
+  -> a
+  -> { b | jumping : a }
+setJumpingIn o v =
+  { o | jumping = v }
