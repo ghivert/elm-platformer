@@ -131,7 +131,7 @@ start : Model
 start =
     { viewport = Viewport 0 0
     , position = 0
-    , tiles = ground
+    , tiles = ground ++ [ Tile 4 2 "/assets/Tiles/platformPack_tile001.png" ]
     , player =
       { position = Position 32 200
       , jumping = Nothing
@@ -467,20 +467,26 @@ applyJump ({ player } as model) =
 
 applyGravity : Model -> Model
 applyGravity ({ player, tiles } as model) =
-  if isVerticalCollisionning tiles player.position then
-    if Maybe.isJust player.jumping then
-      { player | jumping = Nothing, sprite = Idle, jumpTimer = Nothing }
+  let newPosition = toFloat player.position.y * gravityPower
+                    |> round
+                    -- |> toNearest64
+                    |> setYIn player.position in
+  case isVerticalCollisionning tiles newPosition of
+    Nothing -> { model | player = setPosition newPosition player }
+    Just value ->
+      setY value player.position
+      |> setPositionIn player
       |> setPlayerIn model
-      |> triggerSprite
-    else
-      model
-  else
-    toFloat player.position.y * gravityPower
-    |> round
-    |> toNearest64
-    |> setYIn player.position
-    |> setPositionIn player
+      |> stopJumping
+
+stopJumping : Model -> Model
+stopJumping ({ player } as model) =
+  if Maybe.isJust player.jumping then
+    { player | jumping = Nothing, sprite = Idle, jumpTimer = Nothing }
     |> setPlayerIn model
+    |> triggerSprite
+  else
+    model
 
 toNearest64 : Int -> Int
 toNearest64 number =
@@ -504,22 +510,38 @@ moreOrLess variance reference comparable =
   else
     False
 
-isVerticalCollisionning : List Tile -> Position -> Bool
+isVerticalCollisionning : List Tile -> Position -> Maybe Int
 isVerticalCollisionning tiles position =
   tiles
   |> List.map (isVerticalCollisionningWithOne position)
-  |> isOneTrue
+  |> isOneJust
+
+isOneJust : List (Maybe a) -> Maybe a
+isOneJust =
+  List.foldr Maybe.or Nothing
+
+keepJust : Maybe a -> Maybe a -> Maybe a
+keepJust value acc =
+  if Maybe.isJust acc then
+    acc
+  else if Maybe.isJust value then
+    value
+  else
+    Nothing
 
 isOneTrue : List Bool -> Bool
 isOneTrue =
   List.foldr (\value acc -> acc || value) False
 
-isVerticalCollisionningWithOne : Position -> Tile -> Bool
+isVerticalCollisionningWithOne : Position -> Tile -> Maybe Int
 isVerticalCollisionningWithOne { x, y } { column, row } =
-  if y == row * tileSize then
-    isPlayerOnTile column x
+  if y <= row * tileSize then
+    if isPlayerOnTile column x then
+      Just (row * tileSize)
+    else
+      Nothing
   else
-    False
+    Nothing
 
 isPlayerOnTile : Int -> Int -> Bool
 isPlayerOnTile column x =

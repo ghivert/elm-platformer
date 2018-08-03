@@ -11,3 +11,8 @@ isNothing value =
   case value of
     Just _ -> False
     Nothing -> True
+
+or : Maybe a -> Maybe a -> Maybe a
+or ma mb = case ma of
+  Nothing -> mb
+  Just _ -> ma
